@@ -15,7 +15,7 @@ func Test_buildCmd(t *testing.T) {
 		Shell:   true,
 	}
 
-	cmd := buildCmd(testJob1)
+	cmd, _ := buildCmd(testJob1)
 	out, err := cmd.CombinedOutput()
 	assert.NoError(t, err)
 	assert.Equal(t, "test1\nsuccess\n", string(out))
@@ -25,7 +25,7 @@ func Test_buildCmd(t *testing.T) {
 		Command: "date && echo 'success'",
 		Shell:   false,
 	}
-	cmd = buildCmd(testJob2)
+	cmd, _ = buildCmd(testJob2)
 	out, err = cmd.CombinedOutput()
 	assert.Error(t, err)
 }
@@ -41,9 +41,24 @@ func Test_buildCmdWithCustomEnvironmentVariables(t *testing.T) {
 		Shell:                true,
 	}
 
-	cmd := buildCmd(testJob)
+	cmd, _ := buildCmd(testJob)
 	out, err := cmd.CombinedOutput()
 	assert.NoError(t, err)
 	assert.Equal(t, "Toto\nHo\n", string(out))
+
+}
+
+func Test_buildCmdWithIllegalArguments(t *testing.T) {
+	defer func() {
+		os.Setenv("Foo", "")
+	}()
+	os.Setenv("Foo", "Bar")
+	testJob := &Job{
+		Command: "this is evil \" ' ",
+		Shell:   false,
+	}
+
+	_, err := buildCmd(testJob)
+	assert.NotNil(t, err)
 
 }

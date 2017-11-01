@@ -22,11 +22,29 @@ const (
 	maxBufSize = 256000
 )
 
+func (a *AgentCommand) markExecutionAsFailed(execution *Execution, err error) error {
+	execution.FinishedAt = time.Now()
+	execution.Success = false
+	execution.Output = []byte(err.Error())
+
+	rpcServer, err := a.queryRPCConfig()
+	if err != nil {
+		return err
+	}
+
+	rc := &RPCClient{ServerAddr: string(rpcServer)}
+	return rc.callExecutionDone(execution)
+}
+
 // invokeJob will execute the given job. Depending on the event.
 func (a *AgentCommand) invokeJob(job *Job, execution *Execution) error {
 	output, _ := circbuf.NewBuffer(maxBufSize)
 
-	cmd := buildCmd(job)
+	cmd, err := buildCmd(job)
+	if err != nil {
+		a.markExecutionAsFailed(execution, err)
+		return err
+	}
 	cmd.Stderr = output
 	cmd.Stdout = output
 
@@ -35,7 +53,7 @@ func (a *AgentCommand) invokeJob(job *Job, execution *Execution) error {
 		log.Warnf("proc: Script '%s' slow, execution exceeding %v", job.Command, 2*time.Hour)
 	})
 
-	err := cmd.Start()
+	err = cmd.Start()
 
 	// Warn if buffer is overritten
 	if output.TotalWritten() > output.Size() {
@@ -76,7 +94,7 @@ func (a *AgentCommand) selectServer() serf.Member {
 }
 
 // Determine the shell invocation based on OS
-func buildCmd(job *Job) (cmd *exec.Cmd) {
+func buildCmd(job *Job) (cmd *exec.Cmd, err error) {
 	var shell, flag string
 
 	if job.Shell {
@@ -91,7 +109,8 @@ func buildCmd(job *Job) (cmd *exec.Cmd) {
 	} else {
 		args, err := shellwords.Parse(job.Command)
 		if err != nil {
-			log.WithError(err).Fatal("proc: Error parsing command arguments")
+			log.WithError(err).Error("proc: Error parsing command arguments")
+			return nil, err
 		}
 		cmd = exec.Command(args[0], args[1:]...)
 	}
@@ -99,5 +118,5 @@ func buildCmd(job *Job) (cmd *exec.Cmd) {
 		cmd.Env = append(os.Environ(), job.EnvironmentVariables...)
 	}
 
-	return
+	return cmd, nil
 }
