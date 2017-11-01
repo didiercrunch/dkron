@@ -274,16 +274,21 @@ func (s *Store) GetLastExecutionGroup(jobName string) ([]*Execution, error) {
 	if err != nil {
 		return nil, err
 	}
-	if len(res) == 0{
+	if len(res) == 0 {
 		return []*Execution{}, nil
 	}
 
-	var ex Execution
-	err = json.Unmarshal([]byte(res[len(res)-1].Value), &ex)
-	if err != nil {
-		return nil, err
+	executions := make(ExecutionsByStartedAt, 0, len(res))
+	for _, r := range res {
+		ex := new(Execution)
+		if err := json.Unmarshal(r.Value, ex); err == nil {
+			executions = append(executions, ex)
+		} else {
+			log.Errorf("store: Cannot parse json for key %s.\n%s", r.Key, string(r.Value))
+		}
 	}
-	return s.GetExecutionGroup(&ex)
+	sort.Sort(executions)
+	return s.GetExecutionGroup(executions[len(executions)-1])
 }
 
 func (s *Store) GetExecutionGroup(execution *Execution) ([]*Execution, error) {
@@ -349,19 +354,17 @@ func (s *Store) SetExecution(execution *Execution) (string, error) {
 		log.Errorf("store: No executions found for job %s", execution.JobName)
 	}
 
+	executionsByStartedAt := ExecutionsByStartedAt(execs)
+	sort.Sort(executionsByStartedAt)
 	// Get and ordered array of all execution groups
-	var byGroup int64arr
-	for _, ex := range execs {
-		byGroup = append(byGroup, ex.Group)
-	}
-	sort.Sort(byGroup)
 
 	// Delete all execution results over the limit, starting from olders
-	if len(byGroup) > MaxExecutions {
-		for i := range byGroup[MaxExecutions:] {
-			err := s.Client.Delete(fmt.Sprintf("%s/executions/%s/%s", s.keyspace, execs[i].JobName, execs[i].Key()))
+	if len(executionsByStartedAt) > MaxExecutions {
+		end := len(executionsByStartedAt) - MaxExecutions //len(executionsByStartedAt) - 1
+		for _, ex := range executionsByStartedAt[0:end] {
+			err := s.Client.Delete(fmt.Sprintf("%s/executions/%s/%s", s.keyspace, ex.JobName, ex.Key()))
 			if err != nil {
-				log.Errorf("store: Trying to delete overflowed execution %s", execs[i].Key())
+				log.Errorf("store: Trying to delete overflowed execution %s", ex.Key())
 			}
 		}
 	}

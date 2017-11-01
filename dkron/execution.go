@@ -31,6 +31,25 @@ type Execution struct {
 	Attempt uint `json:"attempt,omitempty"`
 }
 
+
+type ExecutionsByStartedAt []*Execution
+
+
+func (a ExecutionsByStartedAt) Len() int{
+	return len(a)
+}
+
+
+func (a ExecutionsByStartedAt) Swap(i, j int)  {
+	a[i], a[j] = a[j], a[i]
+}
+
+
+func (a ExecutionsByStartedAt) Less(i, j int) bool {
+	return a[i].StartedAt.UnixNano() < a[j].StartedAt.UnixNano()
+}
+
+
 // Init a new execution
 func NewExecution(jobName string) *Execution {
 	return &Execution{
